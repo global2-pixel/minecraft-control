@@ -1,0 +1,25 @@
+{
+	"schemaVersion": 1,
+	"id": "robotcmd",
+	"version": "${version}",
+	"name": "Robot Cmd",
+	"description": "Client-side mod: when the owner types '<botId> cmd <command>' in chat, the bot executes the command. Owner whitelist is matched by player name.",
+	"authors": [],
+	"contact": {},
+	"license": "MIT",
+	"environment": "client",
+	"mixins": [
+		"robotcmd.mixins.json"
+	],
+	"entrypoints": {
+		"client": [
+			"com.robotcmd.RobotCmdClient"
+		]
+	},
+	"depends": {
+		"fabricloader": ">=0.15.0",
+		"minecraft": "~1.20.1",
+		"java": ">=17",
+		"fabric-api": "*"
+	}
+}

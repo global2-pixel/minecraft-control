@@ -1,0 +1,23 @@
+{
+	"schemaVersion": 1,
+	"id": "ownercmd",
+	"version": "${version}",
+	"name": "Owner Cmd Suggestion",
+	"description": "Forwards the robot's command suggestions into your chat input. Type '<botId> cmd <partial>' then press TAB.",
+	"license": "MIT",
+	"environment": "client",
+	"entrypoints": {
+		"client": [
+			"com.robotcmd.client.OwnerCmdMod"
+		]
+	},
+	"mixins": [
+		"ownercmd.mixins.json"
+	],
+	"depends": {
+		"fabricloader": ">=0.19.3",
+		"minecraft": "~26.2",
+		"java": ">=25",
+		"fabric-api": "*"
+	}
+}
