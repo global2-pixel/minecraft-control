@@ -3,7 +3,10 @@ package com.robotcmd;
 import net.fabricmc.api.ClientModInitializer;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.ClientPlayNetworkHandler;
+import net.minecraft.text.ClickEvent;
+import net.minecraft.text.Style;
 import net.minecraft.text.Text;
+import net.minecraft.text.TranslatableTextContent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -57,8 +60,8 @@ public class RobotCmdClient implements ClientModInitializer {
 	public static void onChatMessage(Text message) {
 		try {
 			String text = message.getString();
-			handleChatMessage(text);
-			captureAndForwardResult(text);
+			handleChatMessage(message, text);
+			captureAndForwardResult(message);
 		} catch (Exception e) {
 			LOGGER.error("[robotcmd] Failed to process chat message", e);
 		}
@@ -67,37 +70,48 @@ public class RobotCmdClient implements ClientModInitializer {
 	/** Called from InGameHudMixin for every action-bar (overlay) message. */
 	public static void onOverlayMessage(Text message) {
 		try {
-			captureAndForwardResult(message.getString());
+			captureAndForwardResult(message);
 		} catch (Exception e) {
 			LOGGER.error("[robotcmd] Failed to process overlay message", e);
 		}
 	}
 
-	private static void handleChatMessage(String text) {
+	private static void handleChatMessage(Text message, String text) {
 		String senderName;
 		String content;
-		Matcher senderMatcher = SENDER_PATTERN.matcher(text);
-		if (senderMatcher.matches()) {
-			senderName = senderMatcher.group(1).trim();
-			content = senderMatcher.group(2).trim();
-		} else {
-			Matcher whisperMatcher = WHISPER_PATTERN.matcher(text);
-			if (!whisperMatcher.matches()) {
+
+		int reqIdx = text.indexOf(REQ_TOKEN);
+		if (reqIdx >= 0) {
+			// private request: sender via click event (language-independent), content after the token
+			senderName = extractSenderFromClickEvent(message);
+			if (senderName == null) {
+				Matcher whisperMatcher = WHISPER_PATTERN.matcher(text);
+				if (whisperMatcher.matches()) {
+					senderName = whisperMatcher.group(1).trim();
+				}
+			}
+			if (senderName == null) {
 				return;
 			}
-			senderName = whisperMatcher.group(1).trim();
-			content = whisperMatcher.group(2).trim();
+			content = text.substring(reqIdx + REQ_TOKEN.length()).trim();
+		} else {
+			Matcher senderMatcher = SENDER_PATTERN.matcher(text);
+			if (senderMatcher.matches()) {
+				senderName = senderMatcher.group(1).trim();
+				content = senderMatcher.group(2).trim();
+			} else {
+				// language-independent fallback: click-event sender + translatable content arg
+				senderName = extractSenderFromClickEvent(message);
+				content = extractContentFromArgs(message);
+				if (senderName == null || content == null) {
+					return;
+				}
+			}
 		}
 
 		// Never react to the bot's own echoed messages (prevents loops via /say etc.).
 		if (senderName.equalsIgnoreCase(getSelfName())) {
 			return;
-		}
-
-		// Private requests (owner's tab-completion) arrive as whispers wrapped in [RC-REQ]
-		int requestIdx = content.indexOf(REQ_TOKEN);
-		if (requestIdx >= 0) {
-			content = content.substring(requestIdx + REQ_TOKEN.length()).trim();
 		}
 
 		String botId = resolveBotId();
@@ -139,6 +153,47 @@ public class RobotCmdClient implements ClientModInitializer {
 		if (!RobotInfoService.tryHandle(command, senderName)) {
 			executeCommand(command, senderName);
 		}
+	}
+
+	/** Walks the message tree for the "/msg <name>" suggestion click event (the real username). */
+	private static String extractSenderFromClickEvent(Text message) {
+		Style style = message.getStyle();
+		if (style != null && style.getClickEvent() != null) {
+			ClickEvent clickEvent = style.getClickEvent();
+			if (clickEvent.getAction() == ClickEvent.Action.SUGGEST_COMMAND) {
+				String value = clickEvent.getValue();
+				if (value != null && value.startsWith("/msg ")) {
+					String name = value.substring(5).trim();
+					if (!name.isEmpty() && !name.contains(" ")) {
+						return name;
+					}
+				}
+			}
+		}
+		for (Text sibling : message.getSiblings()) {
+			String sender = extractSenderFromClickEvent(sibling);
+			if (sender != null) {
+				return sender;
+			}
+		}
+		return null;
+	}
+
+	/** Content from the translatable args (chat/whisper types are [sender, content]). */
+	private static String extractContentFromArgs(Text message) {
+		if (message.getContent() instanceof TranslatableTextContent translatable) {
+			Object[] args = translatable.getArgs();
+			if (args.length >= 2 && args[args.length - 1] instanceof Text content) {
+				return content.getString();
+			}
+		}
+		for (Text sibling : message.getSiblings()) {
+			String content = extractContentFromArgs(sibling);
+			if (content != null) {
+				return content;
+			}
+		}
+		return null;
 	}
 
 	/** Sends a private message to the owner. Runs on the client thread (thread-safe). */
@@ -207,7 +262,7 @@ public class RobotCmdClient implements ClientModInitializer {
 	}
 
 	/** Forwards command feedback (system messages, not player chat) via /msg to the requester. */
-	private static void captureAndForwardResult(String text) {
+	private static void captureAndForwardResult(Text message) {
 		if (!capturingResults) {
 			return;
 		}
@@ -216,8 +271,10 @@ public class RobotCmdClient implements ClientModInitializer {
 			capturingResults = false;
 			return;
 		}
-		if (text.isBlank() || SENDER_PATTERN.matcher(text).matches()) {
-			return; // player chat (e.g. /say output) is public by design, not forwarded
+		String text = message.getString();
+		// player messages carry the "/msg <name>" suggest click event; system feedback does not
+		if (text.isBlank() || extractSenderFromClickEvent(message) != null) {
+			return;
 		}
 		if (replyTarget.isEmpty()) {
 			return;
