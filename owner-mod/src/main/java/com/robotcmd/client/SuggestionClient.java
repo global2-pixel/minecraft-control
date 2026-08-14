@@ -20,6 +20,7 @@ import java.util.regex.Pattern;
 public final class SuggestionClient {
 
 	private static final long REQUEST_COOLDOWN_MS = 300;
+	private static final long REQUEST_TIMEOUT_MS = 2500;
 
 	private static String botId = "";
 	private static String requestKeyword = "cmds";
@@ -29,6 +30,9 @@ public final class SuggestionClient {
 	private static int selected = 0;
 	private static String partial = "";
 	private static long lastRequestAt = 0;
+	private static long requestStartedAt = 0;
+	private static boolean panelActive = false;
+	private static boolean replyReceived = false;
 
 	private static final Gson GSON = new Gson();
 
@@ -52,16 +56,21 @@ public final class SuggestionClient {
 		}
 		long now = System.currentTimeMillis();
 		if (now - lastRequestAt < REQUEST_COOLDOWN_MS) {
+			panelActive = true;
 			return true;
 		}
 		if (!suggestions.isEmpty() && partialText.equals(partial)) {
 			selected = (selected + 1) % suggestions.size();
+			panelActive = true;
 			return true;
 		}
 		suggestions = List.of();
 		partial = partialText;
 		selected = 0;
+		replyReceived = false;
+		panelActive = true;
 		lastRequestAt = now;
+		requestStartedAt = now;
 		sendRequest(partialText);
 		return true;
 	}
@@ -72,9 +81,7 @@ public final class SuggestionClient {
 			return null;
 		}
 		String picked = suggestions.get(selected);
-		suggestions = List.of();
-		partial = "";
-		selected = 0;
+		clearPanel();
 		return picked;
 	}
 
@@ -88,18 +95,37 @@ public final class SuggestionClient {
 		try {
 			List<String> parsed = GSON.fromJson(json, new TypeToken<List<String>>() {
 			}.getType());
-			if (parsed != null && !parsed.isEmpty()) {
-				suggestions = parsed;
-				selected = 0;
-			}
+			suggestions = parsed != null ? parsed : List.of();
+			selected = 0;
+			replyReceived = true;
 		} catch (Exception e) {
 			OwnerCmdMod.LOGGER.warn("[ownercmd] Failed to parse suggestion reply: {}", json);
+			suggestions = List.of();
+			replyReceived = true;
 		}
 		return true;
 	}
 
-	public static boolean shouldShow(String inputText) {
-		return !suggestions.isEmpty() && matchPartial(inputText) != null;
+	public static void clearPanel() {
+		panelActive = false;
+		replyReceived = false;
+		suggestions = List.of();
+		partial = "";
+		selected = 0;
+	}
+
+	/** Panel state for the overlay: null = hidden, otherwise READY/WAITING/EMPTY/TIMEOUT. */
+	public static String panelState(String inputText) {
+		if (matchPartial(inputText) == null || !panelActive) {
+			return null;
+		}
+		if (replyReceived) {
+			return suggestions.isEmpty() ? "EMPTY" : "READY";
+		}
+		if (System.currentTimeMillis() - requestStartedAt > REQUEST_TIMEOUT_MS) {
+			return "TIMEOUT";
+		}
+		return "WAITING";
 	}
 
 	public static List<String> suggestions() {
@@ -132,6 +158,9 @@ public final class SuggestionClient {
 		ClientPacketListener connection = client.getConnection();
 		if (connection != null) {
 			connection.sendChat(botId + " " + requestKeyword + " " + partialText);
+			OwnerCmdMod.LOGGER.info("[ownercmd] Suggestion request sent: {}", partialText);
+		} else {
+			OwnerCmdMod.LOGGER.warn("[ownercmd] Not connected, cannot request suggestions");
 		}
 	}
 }

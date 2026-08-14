@@ -16,29 +16,36 @@ public final class SuggestionOverlay {
 	private static final int OUTLINE_COLOR = 0xFF505050;
 	private static final int HIGHLIGHT_COLOR = 0xC03366FF;
 	private static final int TEXT_COLOR = 0xFFE0E0E0;
+	private static final int HINT_COLOR = 0xFFA0A0A0;
 
 	private SuggestionOverlay() {
 	}
 
 	public static void render(GuiGraphicsExtractor extractor, EditBox input) {
-		if (!SuggestionClient.shouldShow(input.getValue())) {
-			return;
-		}
-		List<String> suggestions = SuggestionClient.suggestions();
-		if (suggestions.isEmpty()) {
+		String state = SuggestionClient.panelState(input.getValue());
+		if (state == null) {
 			return;
 		}
 		Font font = Minecraft.getInstance().font;
-		int selected = SuggestionClient.selected();
 
+		boolean isList = "READY".equals(state);
 		int lineHeight = font.lineHeight + 4;
-		int panelHeight = suggestions.size() * lineHeight + PADDING * 2;
+		int rows = isList ? SuggestionClient.suggestions().size() : 1;
+		int panelHeight = rows * lineHeight + PADDING * 2;
 		int x = input.getX() + (input.getWidth() - PANEL_WIDTH) / 2;
-		int y = input.getY() - panelHeight - 4;
+		int y = Math.max(2, input.getY() - panelHeight - 4);
 
+		extractor.nextStratum();
 		extractor.fill(x, y, x + PANEL_WIDTH, y + panelHeight, BG_COLOR);
 		extractor.outline(x, y, x + PANEL_WIDTH, y + panelHeight, OUTLINE_COLOR);
 
+		if (!isList) {
+			extractor.text(font, stateText(state), x + 6, y + PADDING + 1, HINT_COLOR);
+			return;
+		}
+
+		List<String> suggestions = SuggestionClient.suggestions();
+		int selected = SuggestionClient.selected();
 		for (int i = 0; i < suggestions.size(); i++) {
 			int rowY = y + PADDING + i * lineHeight;
 			if (i == selected) {
@@ -50,5 +57,14 @@ public final class SuggestionOverlay {
 			}
 			extractor.text(font, text, x + 6, rowY + 2, TEXT_COLOR);
 		}
+	}
+
+	private static String stateText(String state) {
+		return switch (state) {
+			case "WAITING" -> "请求补全中...";
+			case "EMPTY" -> "（无匹配补全）";
+			case "TIMEOUT" -> "（请求超时，机器人未回复）";
+			default -> "";
+		};
 	}
 }

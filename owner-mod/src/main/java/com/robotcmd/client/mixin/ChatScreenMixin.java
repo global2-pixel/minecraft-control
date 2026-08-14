@@ -43,4 +43,9 @@ public abstract class ChatScreenMixin {
 	private void robotcmd$onExtractRenderState(GuiGraphicsExtractor extractor, int mouseX, int mouseY, float partialTick, CallbackInfo ci) {
 		SuggestionOverlay.render(extractor, this.input);
 	}
+
+	@Inject(method = "removed()V", at = @At("HEAD"))
+	private void robotcmd$onRemoved(CallbackInfo ci) {
+		SuggestionClient.clearPanel();
+	}
 }

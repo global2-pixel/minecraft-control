@@ -44,6 +44,7 @@ public final class SuggestionService {
 		if (trimmed.isEmpty()) {
 			return;
 		}
+		RobotCmdClient.LOGGER.info("[robotcmd] Suggestion request from '{}': {}", ownerName, trimmed);
 
 		Thread worker = new Thread(() -> {
 			try {
