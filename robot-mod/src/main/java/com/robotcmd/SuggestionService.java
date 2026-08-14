@@ -100,14 +100,25 @@ public final class SuggestionService {
 			Object provider = apiClass.getMethod("getProvider").invoke(null);
 			Object baritone = provider.getClass().getMethod("getPrimaryBaritone").invoke(provider);
 			Object manager = baritone.getClass().getMethod("getCommandManager").invoke(baritone);
-			Object result = manager.getClass().getMethod("tabComplete", String.class).invoke(manager, partial);
+
+			// Baritone expects the prefix WITHOUT the leading '#', and its suggestions
+			// come back without '#' — re-add it so the completed command works in chat.
+			boolean hadPrefix = partial.startsWith("#");
+			String stripped = hadPrefix ? partial.substring(1) : partial;
+			Object result = manager.getClass().getMethod("tabComplete", String.class).invoke(manager, stripped);
 			if (result instanceof Stream<?> stream) {
 				List<String> out = new ArrayList<>();
-				stream.forEach(item -> out.add(String.valueOf(item)));
+				stream.forEach(item -> {
+					String s = String.valueOf(item);
+					if (hadPrefix && !s.startsWith("#")) {
+						s = "#" + s;
+					}
+					out.add(s);
+				});
 				return out;
 			}
-		} catch (Exception ignored) {
-			// Baritone not installed or API mismatch -> no Baritone suggestions
+		} catch (Exception e) {
+			RobotCmdClient.LOGGER.info("[robotcmd] Baritone tabComplete unavailable: {}", e.toString());
 		}
 		return List.of();
 	}
