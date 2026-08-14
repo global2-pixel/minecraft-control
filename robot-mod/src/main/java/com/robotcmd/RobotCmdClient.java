@@ -91,6 +91,7 @@ public class RobotCmdClient implements ClientModInitializer {
 				}
 			}
 			if (senderName == null) {
+				LOGGER.warn("[robotcmd] Could not identify sender of private request, ignoring: {}", text);
 				return;
 			}
 			content = text.substring(reqIdx + REQ_TOKEN.length()).trim();
@@ -124,9 +125,16 @@ public class RobotCmdClient implements ClientModInitializer {
 			return;
 		}
 
-		// Match: <botId> cmds <partial>  ->  suggestion request, never executes
-		String suggestRegex = "^" + Pattern.quote(botId) + "\\s+cmds\\s+(.+)$";
-		Matcher suggestMatcher = Pattern.compile(suggestRegex, Pattern.CASE_INSENSITIVE).matcher(content);
+		// Normalize: strip the optional botId prefix, then match the keyword-first form.
+		// Chat messages arrive as "<botId> cmd ..."; token-wrapped private requests
+		// arrive as "cmd ..." (already addressed to the bot via /msg).
+		String normalized = content;
+		if (normalized.regionMatches(true, 0, botId, 0, botId.length())) {
+			normalized = normalized.substring(botId.length()).trim();
+		}
+
+		// Match: cmds <partial>  ->  suggestion request, never executes
+		Matcher suggestMatcher = Pattern.compile("^cmds\\s+(.+)$", Pattern.CASE_INSENSITIVE).matcher(normalized);
 		if (suggestMatcher.matches()) {
 			long now = System.currentTimeMillis();
 			if (now - lastSuggestAt >= SUGGEST_COOLDOWN_MS) {
@@ -136,9 +144,8 @@ public class RobotCmdClient implements ClientModInitializer {
 			return;
 		}
 
-		// Match: <botId> cmd <command>
-		String regex = "^" + Pattern.quote(botId) + "\\s+cmd\\s+(.+)$";
-		Matcher cmdMatcher = Pattern.compile(regex, Pattern.CASE_INSENSITIVE).matcher(content);
+		// Match: cmd <command>
+		Matcher cmdMatcher = Pattern.compile("^cmd\\s+(.+)$", Pattern.CASE_INSENSITIVE).matcher(normalized);
 		if (!cmdMatcher.matches()) {
 			return;
 		}
