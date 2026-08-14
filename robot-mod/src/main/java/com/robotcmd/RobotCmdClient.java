@@ -41,8 +41,8 @@ public class RobotCmdClient implements ClientModInitializer {
 	/** Vanilla chat arrives as {@code <SenderName> message}. */
 	static final Pattern SENDER_PATTERN = Pattern.compile("^<([^>]+)>\\s+(.+)$");
 
-	/** Private messages arrive as {@code Name whispers to you: ...} (wrapper text is localized). */
-	private static final Pattern WHISPER_PATTERN = Pattern.compile("^([A-Za-z0-9_]+)[^:]+: (.+)$");
+	/** Private messages arrive as {@code Name whispers to you: ...} (wrapper text and colon style are localized). */
+	private static final Pattern WHISPER_PATTERN = Pattern.compile("^([A-Za-z0-9_]+)[^:：]+[：:]\\s*(.+)$");
 
 	/** Anti-loop / anti-spam guard. */
 	private static final long COOLDOWN_MS = 1000;

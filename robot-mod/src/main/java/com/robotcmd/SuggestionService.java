@@ -8,6 +8,7 @@ import net.minecraft.network.packet.c2s.play.RequestCommandCompletionsC2SPacket;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
@@ -29,6 +30,13 @@ public final class SuggestionService {
 
 	private static final long REQUEST_TIMEOUT_MS = 2500;
 	private static final int MAX_SUGGESTIONS = 80;
+
+	/** Fallback command names used when the Baritone API reflection is unavailable. */
+	private static final List<String> BARITONE_COMMANDS = List.of(
+		"#help", "#goto", "#mine", "#farm", "#build", "#explore", "#follow", "#path",
+		"#waypoint", "#set", "#get", "#reset", "#pause", "#resume", "#stop", "#come",
+		"#tunnel", "#fill", "#click", "#look", "#surface", "#elytra", "#freecam", "#spawn",
+		"#inventory", "#save", "#load", "#version", "#settings", "#axis");
 
 	private static final AtomicInteger NEXT_COMPLETION_ID = new AtomicInteger(1);
 	private static final Map<Integer, CompletableFuture<List<String>>> PENDING = new LinkedHashMap<>();
@@ -95,6 +103,8 @@ public final class SuggestionService {
 	}
 
 	private static List<String> getBaritoneSuggestions(String partial) {
+		boolean hadPrefix = partial.startsWith("#");
+		String stripped = hadPrefix ? partial.substring(1) : partial;
 		try {
 			Class<?> apiClass = Class.forName("baritone.api.BaritoneAPI");
 			Object provider = apiClass.getMethod("getProvider").invoke(null);
@@ -103,24 +113,38 @@ public final class SuggestionService {
 
 			// Baritone expects the prefix WITHOUT the leading '#', and its suggestions
 			// come back without '#' — re-add it so the completed command works in chat.
-			boolean hadPrefix = partial.startsWith("#");
-			String stripped = hadPrefix ? partial.substring(1) : partial;
 			Object result = manager.getClass().getMethod("tabComplete", String.class).invoke(manager, stripped);
 			if (result instanceof Stream<?> stream) {
 				List<String> out = new ArrayList<>();
-				stream.forEach(item -> {
-					String s = String.valueOf(item);
-					if (hadPrefix && !s.startsWith("#")) {
-						s = "#" + s;
-					}
-					out.add(s);
-				});
-				return out;
+				stream.forEach(item -> out.add(String.valueOf(item)));
+				if (!out.isEmpty()) {
+					return withPrefix(out, hadPrefix);
+				}
 			}
 		} catch (Exception e) {
-			RobotCmdClient.LOGGER.info("[robotcmd] Baritone tabComplete unavailable: {}", e.toString());
+			RobotCmdClient.LOGGER.info("[robotcmd] Baritone API unavailable, using static list: {}", e.toString());
 		}
-		return List.of();
+		// fallback: prefix-match a static command list
+		String query = stripped.toLowerCase(Locale.ROOT);
+		List<String> out = new ArrayList<>();
+		for (String cmd : BARITONE_COMMANDS) {
+			String name = cmd.startsWith("#") ? cmd.substring(1) : cmd;
+			if (name.toLowerCase(Locale.ROOT).startsWith(query)) {
+				out.add(cmd);
+			}
+		}
+		return out;
+	}
+
+	private static List<String> withPrefix(List<String> suggestions, boolean hadPrefix) {
+		if (!hadPrefix) {
+			return suggestions;
+		}
+		List<String> out = new ArrayList<>();
+		for (String s : suggestions) {
+			out.add(s.startsWith("#") ? s : "#" + s);
+		}
+		return out;
 	}
 
 	private static List<String> merge(List<String> server, List<String> baritone) {
