@@ -80,12 +80,26 @@ public final class SuggestionClient {
 
 	/** Returns the selected suggestion if Enter should insert it, else null. */
 	public static String consumeOnEnter() {
-		if (suggestions.isEmpty()) {
+		return consumeRow(selected);
+	}
+
+	/** Returns the suggestion at the given row if it should be inserted, else null. */
+	public static String consumeRow(int row) {
+		if (suggestions.isEmpty() || row < 0 || row >= suggestions.size()) {
 			return null;
 		}
-		String picked = suggestions.get(selected);
+		String picked = suggestions.get(row);
 		clearPanel();
 		return picked;
+	}
+
+	/** Returns true if the arrow key moved the selection. */
+	public static boolean onArrowPressed(int delta) {
+		if (suggestions.isEmpty() || !panelActive) {
+			return false;
+		}
+		selected = Math.floorMod(selected + delta, suggestions.size());
+		return true;
 	}
 
 	/** Returns true if the chat line was a suggestion reply (should be hidden). */
@@ -170,7 +184,8 @@ public final class SuggestionClient {
 		Minecraft client = Minecraft.getInstance();
 		ClientPacketListener connection = client.getConnection();
 		if (connection != null) {
-			connection.sendChat(botId + " " + requestKeyword + " " + partialText);
+			// private request to the robot: [RC-REQ] keeps it out of public chat
+			connection.sendCommand("msg " + botId + " [RC-REQ] " + requestKeyword + " " + partialText);
 			OwnerCmdMod.LOGGER.info("[ownercmd] Suggestion request sent: {}", partialText);
 		} else {
 			OwnerCmdMod.LOGGER.warn("[ownercmd] Not connected, cannot request suggestions");

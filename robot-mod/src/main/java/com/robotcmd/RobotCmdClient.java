@@ -26,8 +26,14 @@ public class RobotCmdClient implements ClientModInitializer {
 
 	public static final Logger LOGGER = LoggerFactory.getLogger("robotcmd");
 
+	/** Private-request wrapper used by the owner's tab-completion. */
+	private static final String REQ_TOKEN = "[RC-REQ]";
+
 	/** Vanilla chat arrives as {@code <SenderName> message}. */
 	static final Pattern SENDER_PATTERN = Pattern.compile("^<([^>]+)>\\s+(.+)$");
+
+	/** Private messages arrive as {@code Name whispers to you: ...} (wrapper text is localized). */
+	private static final Pattern WHISPER_PATTERN = Pattern.compile("^([A-Za-z0-9_]+)[^:]+: (.+)$");
 
 	/** Anti-loop / anti-spam guard. */
 	private static final long COOLDOWN_MS = 1000;
@@ -68,16 +74,30 @@ public class RobotCmdClient implements ClientModInitializer {
 	}
 
 	private static void handleChatMessage(String text) {
+		String senderName;
+		String content;
 		Matcher senderMatcher = SENDER_PATTERN.matcher(text);
-		if (!senderMatcher.matches()) {
-			return;
+		if (senderMatcher.matches()) {
+			senderName = senderMatcher.group(1).trim();
+			content = senderMatcher.group(2).trim();
+		} else {
+			Matcher whisperMatcher = WHISPER_PATTERN.matcher(text);
+			if (!whisperMatcher.matches()) {
+				return;
+			}
+			senderName = whisperMatcher.group(1).trim();
+			content = whisperMatcher.group(2).trim();
 		}
-		String senderName = senderMatcher.group(1).trim();
-		String content = senderMatcher.group(2).trim();
 
 		// Never react to the bot's own echoed messages (prevents loops via /say etc.).
 		if (senderName.equalsIgnoreCase(getSelfName())) {
 			return;
+		}
+
+		// Private requests (owner's tab-completion) arrive as whispers wrapped in [RC-REQ]
+		int requestIdx = content.indexOf(REQ_TOKEN);
+		if (requestIdx >= 0) {
+			content = content.substring(requestIdx + REQ_TOKEN.length()).trim();
 		}
 
 		String botId = resolveBotId();
@@ -174,8 +194,8 @@ public class RobotCmdClient implements ClientModInitializer {
 			// /give ... -> sendChatCommand("give ...")
 			networkHandler.sendChatCommand(command.substring(1));
 		} else {
-			// plain text -> the bot says it in chat
-			networkHandler.sendChatMessage(command);
+			// plain text -> private reply to the requester instead of public chat
+			replyTo(senderName, command);
 		}
 
 		RobotCmdConfig config = RobotCmdConfig.get();
