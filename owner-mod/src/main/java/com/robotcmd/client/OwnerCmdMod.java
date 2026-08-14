@@ -13,7 +13,6 @@ public class OwnerCmdMod implements ClientModInitializer {
 		OwnerCmdConfig.load();
 		SuggestionClient.reloadConfig();
 		RobotCommandRegistration.register();
-		LOGGER.info("[ownercmd] Initialized. botId='{}' requestKeyword='{}' replyToken='{}'",
-			OwnerCmdConfig.get().botId, OwnerCmdConfig.get().requestKeyword, OwnerCmdConfig.get().replyToken);
+		LOGGER.info("[ownercmd] Initialized.");
 	}
 }

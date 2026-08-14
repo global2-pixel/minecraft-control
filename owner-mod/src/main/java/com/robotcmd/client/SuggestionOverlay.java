@@ -18,18 +18,11 @@ public final class SuggestionOverlay {
 	private static final int TEXT_COLOR = 0xFFE0E0E0;
 	private static final int HINT_COLOR = 0xFFA0A0A0;
 
-	private static String lastLoggedState = "";
-
 	private SuggestionOverlay() {
 	}
 
 	public static void render(GuiGraphicsExtractor extractor, EditBox input) {
 		String state = SuggestionClient.panelState(input.getValue());
-		if (!state.equals(lastLoggedState)) {
-			lastLoggedState = state == null ? "" : state;
-			OwnerCmdMod.LOGGER.info("[ownercmd] Panel state: {}",
-				state == null ? "hidden" : state + " (" + SuggestionClient.suggestions().size() + " items)");
-		}
 		if (state == null) {
 			return;
 		}

@@ -1,6 +1,5 @@
 package com.robotcmd.client.mixin;
 
-import com.robotcmd.client.OwnerCmdMod;
 import com.robotcmd.client.SuggestionClient;
 import com.robotcmd.client.SuggestionOverlay;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
@@ -25,10 +24,7 @@ public abstract class ChatScreenMixin {
 	private void robotcmd$onKeyPressed(KeyEvent event, CallbackInfoReturnable<Boolean> cir) {
 		int key = event.key();
 		if (key == GLFW.GLFW_KEY_TAB) {
-			String inputText = this.input.getValue();
-			boolean consumed = SuggestionClient.onTabPressed(inputText);
-			OwnerCmdMod.LOGGER.info("[ownercmd] TAB pressed: input='{}' consumed={}", inputText, consumed);
-			if (consumed) {
+			if (SuggestionClient.onTabPressed(this.input.getValue())) {
 				cir.setReturnValue(true);
 				cir.cancel();
 			}

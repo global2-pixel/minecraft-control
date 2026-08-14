@@ -5,6 +5,7 @@ import com.google.gson.reflect.TypeToken;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientPacketListener;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -20,13 +21,14 @@ import java.util.regex.Pattern;
 public final class SuggestionClient {
 
 	private static final long REQUEST_COOLDOWN_MS = 300;
-	private static final long REQUEST_TIMEOUT_MS = 2500;
+	private static final long REQUEST_TIMEOUT_MS = 4000;
 
 	private static String botId = "";
 	private static String requestKeyword = "cmds";
 	private static String replyToken = "[RC-SUGG]";
 
 	private static List<String> suggestions = List.of();
+	private static final List<String> pendingChunks = new ArrayList<>();
 	private static int selected = 0;
 	private static String partial = "";
 	private static long lastRequestAt = 0;
@@ -65,6 +67,7 @@ public final class SuggestionClient {
 			return true;
 		}
 		suggestions = List.of();
+		pendingChunks.clear();
 		partial = partialText;
 		selected = 0;
 		replyReceived = false;
@@ -93,15 +96,23 @@ public final class SuggestionClient {
 		}
 		String json = chatText.substring(idx + replyToken.length()).trim();
 		try {
-			List<String> parsed = GSON.fromJson(json, new TypeToken<List<String>>() {
+			List<String> chunk = GSON.fromJson(json, new TypeToken<List<String>>() {
 			}.getType());
-			suggestions = parsed != null ? parsed : List.of();
-			selected = 0;
-			replyReceived = true;
-			OwnerCmdMod.LOGGER.info("[ownercmd] Suggestion reply parsed: {} items", suggestions.size());
+			if (chunk == null) {
+				return true;
+			}
+			if (chunk.isEmpty()) {
+				// terminator chunk: finalize the accumulated chunks
+				suggestions = List.copyOf(pendingChunks);
+				pendingChunks.clear();
+				selected = 0;
+				replyReceived = true;
+			} else {
+				pendingChunks.addAll(chunk);
+			}
 		} catch (Exception e) {
 			OwnerCmdMod.LOGGER.warn("[ownercmd] Failed to parse suggestion reply: {}", json);
-			suggestions = List.of();
+			pendingChunks.clear();
 			replyReceived = true;
 		}
 		return true;
@@ -111,6 +122,7 @@ public final class SuggestionClient {
 		panelActive = false;
 		replyReceived = false;
 		suggestions = List.of();
+		pendingChunks.clear();
 		partial = "";
 		selected = 0;
 	}

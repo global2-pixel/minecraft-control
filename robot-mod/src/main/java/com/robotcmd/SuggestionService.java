@@ -24,8 +24,11 @@ public final class SuggestionService {
 
 	public static final String REPLY_TOKEN = "[RC-SUGG]";
 
+	/** /msg command strings are limited to 256 chars by the protocol; stay well under. */
+	private static final int MAX_MSG_COMMAND_LENGTH = 240;
+
 	private static final long REQUEST_TIMEOUT_MS = 2500;
-	private static final int MAX_SUGGESTIONS = 20;
+	private static final int MAX_SUGGESTIONS = 80;
 
 	private static final AtomicInteger NEXT_COMPLETION_ID = new AtomicInteger(1);
 	private static final Map<Integer, CompletableFuture<List<String>>> PENDING = new LinkedHashMap<>();
@@ -120,8 +123,39 @@ public final class SuggestionService {
 	}
 
 	private static void sendReply(MinecraftClient client, ClientPlayNetworkHandler networkHandler, String ownerName, List<String> suggestions) {
-		String json = GSON.toJson(suggestions);
-		client.execute(() -> networkHandler.sendChatCommand("msg " + ownerName + " " + REPLY_TOKEN + " " + json));
+		String prefix = "msg " + ownerName + " " + REPLY_TOKEN + " ";
+		int maxPayload = MAX_MSG_COMMAND_LENGTH - prefix.length();
+		client.execute(() -> {
+			for (List<String> chunk : chunkJson(suggestions, maxPayload)) {
+				networkHandler.sendChatCommand(prefix + GSON.toJson(chunk));
+			}
+			networkHandler.sendChatCommand(prefix + "[]");
+		});
 		RobotCmdClient.LOGGER.info("[robotcmd] Sent {} suggestions to '{}'", suggestions.size(), ownerName);
+	}
+
+	/** Splits the list so each chunk's JSON stays within the per-message payload limit. */
+	private static List<List<String>> chunkJson(List<String> suggestions, int maxPayload) {
+		List<List<String>> chunks = new ArrayList<>();
+		List<String> current = new ArrayList<>();
+		int currentLen = 2;
+		for (String s : suggestions) {
+			int itemLen = GSON.toJson(s).length() + 2;
+			if (currentLen + itemLen > maxPayload && !current.isEmpty()) {
+				chunks.add(current);
+				current = new ArrayList<>();
+				currentLen = 2;
+			}
+			if (itemLen > maxPayload) {
+				s = s.substring(0, Math.max(1, maxPayload - 20)) + "...";
+				itemLen = GSON.toJson(s).length() + 2;
+			}
+			current.add(s);
+			currentLen += itemLen;
+		}
+		if (!current.isEmpty()) {
+			chunks.add(current);
+		}
+		return chunks;
 	}
 }
