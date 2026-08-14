@@ -28,8 +28,8 @@ public final class RobotInfoService {
 	private RobotInfoService() {
 	}
 
-	/** Returns true if the command was internal (already handled). Results go to the chat bar. */
-	public static boolean tryHandle(String command) {
+	/** Returns true if the command was internal (already handled). Results go via /msg. */
+	public static boolean tryHandle(String command, String ownerName) {
 		String trimmed = command.trim();
 		if (trimmed.startsWith("/")) {
 			trimmed = trimmed.substring(1).trim();
@@ -39,15 +39,15 @@ public final class RobotInfoService {
 		}
 		String lower = trimmed.toLowerCase(Locale.ROOT);
 		if (lower.equals("status") || lower.equals("hp")) {
-			RobotCmdClient.broadcastToChat(status());
+			RobotCmdClient.replyTo(ownerName, status());
 			return true;
 		}
 		if (lower.equals("bag") || lower.equals("mybag") || lower.equals("inv") || lower.equals("inventory")) {
-			RobotCmdClient.broadcastToChat(bag());
+			RobotCmdClient.replyTo(ownerName, bag());
 			return true;
 		}
 		if (lower.equals("drop") || lower.startsWith("drop ")) {
-			RobotCmdClient.broadcastToChat(drop(trimmed.substring(4).trim()));
+			RobotCmdClient.replyTo(ownerName, drop(trimmed.substring(4).trim()));
 			return true;
 		}
 		return false;

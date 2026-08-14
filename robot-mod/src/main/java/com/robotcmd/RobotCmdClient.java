@@ -38,6 +38,7 @@ public class RobotCmdClient implements ClientModInitializer {
 
 	private static boolean capturingResults = false;
 	private static long captureDeadline = 0;
+	private static String replyTarget = "";
 
 	@Override
 	public void onInitializeClient() {
@@ -115,19 +116,19 @@ public class RobotCmdClient implements ClientModInitializer {
 		lastExecutedAt = now;
 
 		String command = cmdMatcher.group(1);
-		if (!RobotInfoService.tryHandle(command)) {
+		if (!RobotInfoService.tryHandle(command, senderName)) {
 			executeCommand(command, senderName);
 		}
 	}
 
-	/** Broadcasts a message to the chat bar. Runs on the client thread (thread-safe). */
-	public static void broadcastToChat(String text) {
+	/** Sends a private message to the owner. Runs on the client thread (thread-safe). */
+	public static void replyTo(String ownerName, String text) {
 		MinecraftClient client = MinecraftClient.getInstance();
 		ClientPlayNetworkHandler networkHandler = client.getNetworkHandler();
 		if (networkHandler == null) {
 			return;
 		}
-		client.execute(() -> networkHandler.sendChatMessage(text));
+		client.execute(() -> networkHandler.sendChatCommand("msg " + ownerName + " " + text));
 	}
 
 	private static boolean isOwner(String senderName) {
@@ -180,11 +181,12 @@ public class RobotCmdClient implements ClientModInitializer {
 		RobotCmdConfig config = RobotCmdConfig.get();
 		capturingResults = config.broadcastResults;
 		captureDeadline = System.currentTimeMillis() + Math.max(0, config.captureWindowMs);
+		replyTarget = senderName;
 
 		LOGGER.info("[robotcmd] Executed by '{}': {}", senderName, command);
 	}
 
-	/** Forwards command feedback (system messages, not player chat) to the chat bar. */
+	/** Forwards command feedback (system messages, not player chat) via /msg to the requester. */
 	private static void captureAndForwardResult(String text) {
 		if (!capturingResults) {
 			return;
@@ -195,16 +197,12 @@ public class RobotCmdClient implements ClientModInitializer {
 			return;
 		}
 		if (text.isBlank() || SENDER_PATTERN.matcher(text).matches()) {
-			return; // player chat (including our own broadcast echo) is not feedback
+			return; // player chat (e.g. /say output) is public by design, not forwarded
 		}
-		sendToChat("[RobotCmd] " + text);
-	}
-
-	private static void sendToChat(String message) {
-		ClientPlayNetworkHandler networkHandler = MinecraftClient.getInstance().getNetworkHandler();
-		if (networkHandler != null) {
-			networkHandler.sendChatMessage(message);
+		if (replyTarget.isEmpty()) {
+			return;
 		}
+		replyTo(replyTarget, "[RobotCmd] " + text);
 	}
 
 	private static String stripQuotes(String cmd) {
