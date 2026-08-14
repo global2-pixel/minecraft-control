@@ -98,6 +98,7 @@ public final class SuggestionClient {
 			suggestions = parsed != null ? parsed : List.of();
 			selected = 0;
 			replyReceived = true;
+			OwnerCmdMod.LOGGER.info("[ownercmd] Suggestion reply parsed: {} items", suggestions.size());
 		} catch (Exception e) {
 			OwnerCmdMod.LOGGER.warn("[ownercmd] Failed to parse suggestion reply: {}", json);
 			suggestions = List.of();
