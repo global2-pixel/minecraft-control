@@ -35,6 +35,9 @@ public class RobotCmdClient implements ClientModInitializer {
 	/** Our own messages always carry one of these tokens; an echo containing one must not be re-forwarded. */
 	private static final String[] PROTOCOL_TOKENS = {"[RC-SUGG]", "[RC-REQ]", "[RobotCmd]"};
 
+	/** Texts we recently sent via /msg; their echoes must not be re-forwarded. */
+	private static final java.util.ArrayDeque<String> RECENT_REPLIES = new java.util.ArrayDeque<>(8);
+
 	/** Vanilla chat arrives as {@code <SenderName> message}. */
 	static final Pattern SENDER_PATTERN = Pattern.compile("^<([^>]+)>\\s+(.+)$");
 
@@ -80,13 +83,16 @@ public class RobotCmdClient implements ClientModInitializer {
 	}
 
 	private static void handleChatMessage(Text message, String text) {
-		String senderName;
+		String senderName = extractSenderFromClickEvent(message);
+		String argsContent = extractContentFromArgs(message);
 		String content;
 
 		int reqIdx = text.indexOf(REQ_TOKEN);
 		if (reqIdx >= 0) {
-			// private request: sender via click event (language-independent), content after the token
-			senderName = extractSenderFromClickEvent(message);
+			// private request: content from the clean component args (no decorative suffix) or after the token
+			String raw = argsContent != null ? argsContent : text;
+			int tokenIdx = raw.indexOf(REQ_TOKEN);
+			content = tokenIdx >= 0 ? raw.substring(tokenIdx + REQ_TOKEN.length()).trim() : raw.trim();
 			if (senderName == null) {
 				Matcher whisperMatcher = WHISPER_PATTERN.matcher(text);
 				if (whisperMatcher.matches()) {
@@ -97,21 +103,28 @@ public class RobotCmdClient implements ClientModInitializer {
 				LOGGER.warn("[robotcmd] Could not identify sender of private request, ignoring: {}", text);
 				return;
 			}
-			content = text.substring(reqIdx + REQ_TOKEN.length()).trim();
 		} else {
 			Matcher senderMatcher = SENDER_PATTERN.matcher(text);
 			if (senderMatcher.matches()) {
-				senderName = senderMatcher.group(1).trim();
-				content = senderMatcher.group(2).trim();
+				if (senderName == null) {
+					senderName = senderMatcher.group(1).trim();
+				}
+				content = argsContent != null ? argsContent : senderMatcher.group(2).trim();
 			} else {
-				// language-independent fallback: click-event sender + translatable content arg
-				senderName = extractSenderFromClickEvent(message);
-				content = extractContentFromArgs(message);
+				if (senderName == null) {
+					Matcher whisperMatcher = WHISPER_PATTERN.matcher(text);
+					if (whisperMatcher.matches()) {
+						senderName = whisperMatcher.group(1).trim();
+					}
+				}
+				content = argsContent;
 				if (senderName == null || content == null) {
 					return;
 				}
 			}
 		}
+
+		content = stripDecorativeSuffix(content);
 
 		// Never react to the bot's own echoed messages (prevents loops via /say etc.).
 		if (senderName.equalsIgnoreCase(getSelfName())) {
@@ -213,7 +226,34 @@ public class RobotCmdClient implements ClientModInitializer {
 		if (networkHandler == null) {
 			return;
 		}
-		client.execute(() -> networkHandler.sendChatCommand("msg " + ownerName + " " + text));
+		client.execute(() -> {
+			networkHandler.sendChatCommand("msg " + ownerName + " " + text);
+			recordReply(text);
+		});
+	}
+
+	/** Remembers a /msg we sent so its echo is not captured as command feedback. */
+	public static void recordReply(String text) {
+		if (text == null || text.isEmpty()) {
+			return;
+		}
+		synchronized (RECENT_REPLIES) {
+			RECENT_REPLIES.addLast(text);
+			while (RECENT_REPLIES.size() > 8) {
+				RECENT_REPLIES.removeFirst();
+			}
+		}
+	}
+
+	private static boolean isOurEcho(String text) {
+		synchronized (RECENT_REPLIES) {
+			for (String sent : RECENT_REPLIES) {
+				if (text.contains(sent)) {
+					return true;
+				}
+			}
+		}
+		return false;
 	}
 
 	private static boolean isOwner(String senderName) {
@@ -258,6 +298,9 @@ public class RobotCmdClient implements ClientModInitializer {
 		if (command.startsWith("/")) {
 			// /give ... -> sendChatCommand("give ...")
 			networkHandler.sendChatCommand(command.substring(1));
+		} else if (command.startsWith("#")) {
+			// Baritone commands go to public chat so Baritone can process them
+			networkHandler.sendChatMessage(command);
 		} else {
 			// plain text -> private reply to the requester instead of public chat
 			replyTo(senderName, command);
@@ -282,19 +325,26 @@ public class RobotCmdClient implements ClientModInitializer {
 			return;
 		}
 		String text = message.getString();
-		// player messages carry the "/msg <name>" suggest click event; system feedback does not
-		if (text.isBlank() || extractSenderFromClickEvent(message) != null) {
-			return;
+		if (text.isBlank() || SENDER_PATTERN.matcher(text).matches()) {
+			return; // player chat is not command feedback
 		}
 		for (String token : PROTOCOL_TOKENS) {
 			if (text.contains(token)) {
 				return; // our own echo/forwarded reply, would loop if re-sent
 			}
 		}
+		if (isOurEcho(text)) {
+			return; // echo of a /msg we just sent
+		}
 		if (replyTarget.isEmpty()) {
 			return;
 		}
 		replyTo(replyTarget, "[RobotCmd] " + text);
+	}
+
+	/** Strips the neko-style decorative suffix some resource packs append to chat formats. */
+	private static String stripDecorativeSuffix(String s) {
+		return s.replaceAll("(?:喵～)+$", "").trim();
 	}
 
 	private static String stripQuotes(String cmd) {

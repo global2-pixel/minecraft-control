@@ -138,9 +138,12 @@ public final class SuggestionService {
 		int maxPayload = MAX_MSG_COMMAND_LENGTH - prefix.length();
 		client.execute(() -> {
 			for (List<String> chunk : chunkJson(suggestions, maxPayload)) {
-				networkHandler.sendChatCommand(prefix + GSON.toJson(chunk));
+				String json = GSON.toJson(chunk);
+				networkHandler.sendChatCommand(prefix + json);
+				RobotCmdClient.recordReply(json);
 			}
 			networkHandler.sendChatCommand(prefix + "[]");
+			RobotCmdClient.recordReply("[]");
 		});
 		RobotCmdClient.LOGGER.info("[robotcmd] Sent {} suggestions to '{}'", suggestions.size(), ownerName);
 	}
