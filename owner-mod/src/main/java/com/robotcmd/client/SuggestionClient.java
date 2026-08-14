@@ -102,6 +102,14 @@ public final class SuggestionClient {
 		return true;
 	}
 
+	/** Returns true if the chat line is one of our protocol messages and should be hidden. */
+	public static boolean shouldHide(String text) {
+		if (text.contains("[RC-REQ]")) {
+			return true;
+		}
+		return tryHandleReply(text);
+	}
+
 	/** Returns true if the chat line was a suggestion reply (should be hidden). */
 	public static boolean tryHandleReply(String chatText) {
 		int idx = chatText.indexOf(replyToken);

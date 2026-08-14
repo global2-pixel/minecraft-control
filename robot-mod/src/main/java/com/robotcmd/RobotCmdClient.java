@@ -32,6 +32,9 @@ public class RobotCmdClient implements ClientModInitializer {
 	/** Private-request wrapper used by the owner's tab-completion. */
 	private static final String REQ_TOKEN = "[RC-REQ]";
 
+	/** Our own messages always carry one of these tokens; an echo containing one must not be re-forwarded. */
+	private static final String[] PROTOCOL_TOKENS = {"[RC-SUGG]", "[RC-REQ]", "[RobotCmd]"};
+
 	/** Vanilla chat arrives as {@code <SenderName> message}. */
 	static final Pattern SENDER_PATTERN = Pattern.compile("^<([^>]+)>\\s+(.+)$");
 
@@ -282,6 +285,11 @@ public class RobotCmdClient implements ClientModInitializer {
 		// player messages carry the "/msg <name>" suggest click event; system feedback does not
 		if (text.isBlank() || extractSenderFromClickEvent(message) != null) {
 			return;
+		}
+		for (String token : PROTOCOL_TOKENS) {
+			if (text.contains(token)) {
+				return; // our own echo/forwarded reply, would loop if re-sent
+			}
 		}
 		if (replyTarget.isEmpty()) {
 			return;
