@@ -46,6 +46,18 @@ public final class RobotInfoService {
 			RobotCmdClient.replyTo(ownerName, bag());
 			return true;
 		}
+		if (lower.equals("log") || lower.startsWith("log ") || lower.equals("chatlog") || lower.startsWith("chatlog ")) {
+			int page = 1;
+			String[] parts = trimmed.split("\\s+");
+			if (parts.length > 1) {
+				try {
+					page = Math.max(1, Integer.parseInt(parts[1]));
+				} catch (NumberFormatException ignored) {
+				}
+			}
+			RobotCmdClient.replyTo(ownerName, ChatLogService.page(page));
+			return true;
+		}
 		if (lower.equals("drop") || lower.startsWith("drop ")) {
 			RobotCmdClient.replyTo(ownerName, drop(trimmed.substring(4).trim()));
 			return true;

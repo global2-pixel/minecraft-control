@@ -66,11 +66,23 @@ public class RobotCmdClient implements ClientModInitializer {
 	public static void onChatMessage(Text message) {
 		try {
 			String text = message.getString();
+			if (!containsProtocolToken(text)) {
+				ChatLogService.record(text);
+			}
 			handleChatMessage(message, text);
 			captureAndForwardResult(message);
 		} catch (Exception e) {
 			LOGGER.error("[robotcmd] Failed to process chat message", e);
 		}
+	}
+
+	private static boolean containsProtocolToken(String text) {
+		for (String token : PROTOCOL_TOKENS) {
+			if (text.contains(token)) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/** Called from InGameHudMixin for every action-bar (overlay) message. */
@@ -328,10 +340,8 @@ public class RobotCmdClient implements ClientModInitializer {
 		if (text.isBlank() || SENDER_PATTERN.matcher(text).matches()) {
 			return; // player chat is not command feedback
 		}
-		for (String token : PROTOCOL_TOKENS) {
-			if (text.contains(token)) {
-				return; // our own echo/forwarded reply, would loop if re-sent
-			}
+		if (containsProtocolToken(text)) {
+			return; // our own echo/forwarded reply, would loop if re-sent
 		}
 		if (isOurEcho(text)) {
 			return; // echo of a /msg we just sent

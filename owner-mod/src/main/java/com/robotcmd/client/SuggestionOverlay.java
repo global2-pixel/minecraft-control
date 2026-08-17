@@ -12,13 +12,14 @@ public final class SuggestionOverlay {
 
 	private static final int PANEL_WIDTH = 260;
 	private static final int PADDING = 4;
+	private static final int MAX_VISIBLE_ROWS = 10;
 	private static final int BG_COLOR = 0xC0101010;
 	private static final int OUTLINE_COLOR = 0xFF505050;
 	private static final int HIGHLIGHT_COLOR = 0xC03366FF;
 	private static final int TEXT_COLOR = 0xFFE0E0E0;
 	private static final int HINT_COLOR = 0xFFA0A0A0;
 
-	public record PanelBounds(int x, int y, int width, int height, int lineHeight, int rows, boolean isList) {
+	public record PanelBounds(int x, int y, int width, int height, int lineHeight, int visibleRows, int scrollOffset, int totalRows, boolean isList) {
 	}
 
 	private SuggestionOverlay() {
@@ -33,14 +34,22 @@ public final class SuggestionOverlay {
 		Font font = Minecraft.getInstance().font;
 		boolean isList = "READY".equals(state);
 		int lineHeight = font.lineHeight + 4;
-		int rows = isList ? SuggestionClient.suggestions().size() : 1;
-		int panelHeight = rows * lineHeight + PADDING * 2;
+		int totalRows = isList ? SuggestionClient.suggestions().size() : 1;
+		int visibleRows = isList ? Math.min(totalRows, MAX_VISIBLE_ROWS) : 1;
+		int scrollOffset = 0;
+		if (isList && totalRows > visibleRows) {
+			int selected = SuggestionClient.selected();
+			scrollOffset = Math.max(0, selected - visibleRows + 1);
+			scrollOffset = Math.min(scrollOffset, totalRows - visibleRows);
+		}
+		int panelRows = visibleRows + (isList && totalRows > visibleRows ? 1 : 0);
+		int panelHeight = panelRows * lineHeight + PADDING * 2;
 		int x = input.getX() + (input.getWidth() - PANEL_WIDTH) / 2;
 		int y = Math.max(2, input.getY() - panelHeight - 4);
-		return new PanelBounds(x, y, PANEL_WIDTH, panelHeight, lineHeight, rows, isList);
+		return new PanelBounds(x, y, PANEL_WIDTH, panelHeight, lineHeight, visibleRows, scrollOffset, totalRows, isList);
 	}
 
-	/** Row index under the mouse position, or -1 if outside the suggestion list. */
+	/** Full-list row index under the mouse position, or -1 if outside the suggestion rows. */
 	public static int hitRow(PanelBounds bounds, double mouseX, double mouseY) {
 		if (bounds == null || !bounds.isList) {
 			return -1;
@@ -49,8 +58,11 @@ public final class SuggestionOverlay {
 			|| mouseY < bounds.y || mouseY > bounds.y + bounds.height) {
 			return -1;
 		}
-		int row = (int) ((mouseY - bounds.y - PADDING) / bounds.lineHeight);
-		return row >= 0 && row < bounds.rows ? row : -1;
+		int visualRow = (int) ((mouseY - bounds.y - PADDING) / bounds.lineHeight);
+		if (visualRow < 0 || visualRow >= bounds.visibleRows) {
+			return -1;
+		}
+		return visualRow + bounds.scrollOffset;
 	}
 
 	public static void render(GuiGraphicsExtractor extractor, EditBox input) {
@@ -72,16 +84,23 @@ public final class SuggestionOverlay {
 
 		List<String> suggestions = SuggestionClient.suggestions();
 		int selected = SuggestionClient.selected();
-		for (int i = 0; i < suggestions.size(); i++) {
+		for (int i = 0; i < bounds.visibleRows; i++) {
+			int rowIndex = i + bounds.scrollOffset;
 			int rowY = bounds.y + PADDING + i * bounds.lineHeight;
-			if (i == selected) {
+			if (rowIndex == selected) {
 				extractor.fill(bounds.x + 1, rowY, bounds.x + bounds.width - 1, rowY + bounds.lineHeight, HIGHLIGHT_COLOR);
 			}
-			String text = suggestions.get(i);
+			String text = suggestions.get(rowIndex);
 			if (font.width(text) > bounds.width - 16) {
 				text = font.plainSubstrByWidth(text, bounds.width - 16 - 3) + "...";
 			}
 			extractor.text(font, text, bounds.x + 6, rowY + 2, TEXT_COLOR);
+		}
+
+		if (bounds.totalRows > bounds.visibleRows) {
+			int footerY = bounds.y + bounds.height - bounds.lineHeight + 1;
+			extractor.text(font, String.format("↑↓ %d/%d", selected + 1, bounds.totalRows),
+				bounds.x + 6, footerY + 2, HINT_COLOR);
 		}
 	}
 

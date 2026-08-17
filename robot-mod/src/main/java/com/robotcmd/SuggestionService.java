@@ -1,6 +1,9 @@
 package com.robotcmd;
 
 import com.google.gson.Gson;
+import com.mojang.brigadier.context.StringRange;
+import com.mojang.brigadier.suggestion.Suggestion;
+import com.mojang.brigadier.suggestion.Suggestions;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.ClientPlayNetworkHandler;
 import net.minecraft.network.packet.c2s.play.RequestCommandCompletionsC2SPacket;
@@ -39,8 +42,17 @@ public final class SuggestionService {
 		"#inventory", "#save", "#load", "#version", "#settings", "#axis");
 
 	private static final AtomicInteger NEXT_COMPLETION_ID = new AtomicInteger(1);
-	private static final Map<Integer, CompletableFuture<List<String>>> PENDING = new LinkedHashMap<>();
+	private static final Map<Integer, PendingRequest> PENDING = new LinkedHashMap<>();
 	private static final Gson GSON = new Gson();
+
+	private static final class PendingRequest {
+		final CompletableFuture<List<String>> future = new CompletableFuture<>();
+		final String partial;
+
+		PendingRequest(String partial) {
+			this.partial = partial;
+		}
+	}
 
 	private SuggestionService() {
 	}
@@ -72,8 +84,8 @@ public final class SuggestionService {
 
 	private static List<String> requestServerSuggestions(MinecraftClient client, ClientPlayNetworkHandler networkHandler, String partial) {
 		int completionId = NEXT_COMPLETION_ID.getAndIncrement();
-		CompletableFuture<List<String>> future = new CompletableFuture<>();
-		PENDING.put(completionId, future);
+		PendingRequest pending = new PendingRequest(partial);
+		PENDING.put(completionId, pending);
 
 		// ClientConnection.send is not thread-safe, so the request packet is sent on the client thread.
 		CompletableFuture<Void> sent = new CompletableFuture<>();
@@ -86,7 +98,7 @@ public final class SuggestionService {
 		});
 		try {
 			sent.get(REQUEST_TIMEOUT_MS, TimeUnit.MILLISECONDS);
-			return future.get(REQUEST_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+			return pending.future.get(REQUEST_TIMEOUT_MS, TimeUnit.MILLISECONDS);
 		} catch (Exception e) {
 			return List.of();
 		} finally {
@@ -95,11 +107,23 @@ public final class SuggestionService {
 	}
 
 	/** Called from the ClientPlayNetworkHandlerMixin on the client thread. */
-	public static void onServerSuggestions(int completionId, List<String> suggestions) {
-		CompletableFuture<List<String>> future = PENDING.remove(completionId);
-		if (future != null) {
-			future.complete(suggestions);
+	public static void onServerSuggestions(int completionId, Suggestions suggestions) {
+		PendingRequest pending = PENDING.remove(completionId);
+		if (pending == null) {
+			return;
 		}
+		// Server suggestions are token-level: their range marks where the text replaces
+		// the partial. Reconstruct the full command string the vanilla client would insert.
+		List<String> full = new ArrayList<>();
+		for (Suggestion s : suggestions.getList()) {
+			StringRange range = s.getRange();
+			try {
+				full.add(pending.partial.substring(0, range.getStart()) + s.getText() + pending.partial.substring(range.getEnd()));
+			} catch (Exception e) {
+				full.add(s.getText());
+			}
+		}
+		pending.future.complete(full);
 	}
 
 	private static List<String> getBaritoneSuggestions(String partial) {
