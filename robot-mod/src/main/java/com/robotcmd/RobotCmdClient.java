@@ -58,6 +58,7 @@ public class RobotCmdClient implements ClientModInitializer {
 	@Override
 	public void onInitializeClient() {
 		RobotCmdConfig.load();
+		ChatLogService.init();
 		RobotCommandRegistration.register();
 		LOGGER.info("[robotcmd] Initialized.");
 	}
